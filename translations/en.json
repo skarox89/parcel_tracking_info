@@ -1,0 +1,153 @@
+{
+  "config": {
+    "title": "Parcel Tracking Info",
+    "step": {
+      "user": {
+        "title": "Parcel Tracking Info",
+        "description": "Choose an action.",
+        "data": {
+          "action": "Action",
+          "carrier": "Carrier"
+        }
+      },
+      "import_config": {
+        "title": "Import Configuration",
+        "description": "Paste the configuration JSON string below.",
+        "data": {
+          "imported_config": "Imported Configuration"
+        }
+      },
+      "email_config": {
+        "title": "Email Configuration",
+        "description": "Enter your email account settings.",
+        "data": {
+          "host": "IMAP Server",
+          "port": "IMAP Port",
+          "email": "Email",
+          "password": "Password",
+          "email_folder": "Email Folder",
+          "update_interval": "Update Interval (minutes)",
+          "email_age": "Email Age (days)"
+        }
+      },
+      "carrier_config": {
+        "title": "Carrier Configuration",
+        "description": "Configure carrier-specific settings.",
+        "data": {
+          "search_criteria": "Search Criteria",
+          "tracking_pattern": "Tracking Number Pattern",
+          "eta_string": "ETA Search String",
+          "eta_date_pattern": "ETA Date Pattern",
+          "status_strings": "Status Strings (comma-separated)"
+        }
+      },
+      "test_parsing": {
+        "title": "Test Parsing Rules",
+        "description": "You can enter a sample email body to test your parsing rules (optional). Large inputs are supported.",
+        "data": {
+          "sample_email": "Sample Email Body"
+        },
+        "submit": "Confirm / Skip"
+      },
+      "api_config": {
+        "title": "API Configuration",
+        "description": "Enter API settings for the carrier (optional).",
+        "data": {
+          "api_key": "API Key",
+          "api_url": "API URL"
+        }
+      },
+      "export_config": {
+        "title": "Export Configuration",
+        "description": "Your configuration has been exported and can be found in the Home Assistant notifications.",
+        "data": {}
+      }
+    },
+    "error": {
+      "invalid_action": "Invalid action selected.",
+      "invalid_import": "Invalid configuration import.",
+      "no_config_to_export": "No existing configuration to export.",
+      "export_failed": "Failed to export configuration. Please check the logs for details.",
+      "cannot_connect": "Cannot connect to email server. Please check your settings.",
+      "invalid_auth": "Invalid username or password.",
+      "imap_error": "IMAP error occurred. Please check the server address and port.",
+      "no_tracking_number_found": "No tracking number found using the provided pattern.",
+      "no_eta_found": "ETA not found using the provided patterns.",
+      "no_status_found": "Status not found using the provided strings."
+    }
+  },
+  "options": {
+    "step": {
+      "choose_options": {
+        "title": "Configure Options",
+        "description": "Select which options you want to configure.",
+        "data": {
+          "option": "Option"
+        }
+      },
+      "email_config": {
+        "title": "Email Configuration",
+        "description": "Update your email account settings.",
+        "data": {
+          "host": "IMAP Server",
+          "port": "IMAP Port",
+          "email": "Email",
+          "password": "Password",
+          "email_folder": "Email Folder",
+          "update_interval": "Update Interval (minutes)",
+          "email_age": "Email Age (days)"
+        }
+      },
+      "carrier_config": {
+        "title": "Carrier Configuration",
+        "description": "Update carrier-specific settings.",
+        "data": {
+          "search_criteria": "Search Criteria",
+          "tracking_pattern": "Tracking Number Pattern",
+          "eta_string": "ETA Search String",
+          "eta_date_pattern": "ETA Date Pattern",
+          "status_strings": "Status Strings (comma-separated)"
+        }
+      },
+      "api_config": {
+        "title": "API Configuration",
+        "description": "Update API settings for the carrier (optional).",
+        "data": {
+          "api_key": "API Key",
+          "api_url": "API URL"
+        }
+      },
+      "import_config": {
+        "title": "Import Configuration",
+        "description": "Paste the configuration JSON string below.",
+        "data": {
+          "imported_config": "Imported Configuration"
+        }
+      },
+      "export_config": {
+        "title": "Export Configuration",
+        "description": "Your configuration has been exported and can be found in the Home Assistant notifications.",
+        "data": {}
+      },
+      
+      "edit_display_name": {
+        "title": "Edit Display Name",
+        "description": "Enter a new display name for your carrier.",
+        "data": {
+          "display_name": "Display Name"
+        }
+      }
+      
+    },
+    "error": {
+      "invalid_option": "Invalid option selected.",
+      "invalid_import": "Invalid configuration import.",
+      "cannot_connect": "Cannot connect to email server. Please check your settings.",
+      "invalid_auth": "Invalid username or password.",
+      "imap_error": "IMAP error occurred. Please check the server address and port.",
+      "export_failed": "Failed to export configuration. Please check the logs for details.",
+      "invalid_name": "Invalid carrier name. Please choose a unique name.",
+      "invalid_display_name": "Invalid display name. Please enter a valid name."
+    }
+  }
+}
