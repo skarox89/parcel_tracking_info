@@ -26,8 +26,10 @@ STATUS_MAPPING = {
         r"sendung ist unterwegs",
         r"unterwegs",
         r"versandt",
-        r"Bestellung versandt",
-        r"transit"
+        r"bestellung versandt",
+        r"transit",
+        r"zustellung",
+        r"wird in kürze zugestellt"
     ],
     "Zugestellt": [
         r"delivered",
@@ -51,9 +53,9 @@ STATUS_MAPPING = {
         r"paket konnte nicht zugestellt werden"
     ],
     "Abholbereit": [
-        r"Packstation",
+        r"packstation",
         r"abholbereit",
-        r"Filiale",
+        r"filiale",
         r"paket konnte nicht zugestellt werden",
         r"hinterlegt",
     ],

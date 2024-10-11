@@ -2,11 +2,12 @@
   "domain": "parcel_tracking_info",
   "name": "Parcel Tracking Info",
   "version": "1.0",
-  "documentation": "https://github.com/skarox89/",
+  "documentation": "https://github.com/skarox89/parcel_tracking_info",
   "requirements": ["aiohttp", "beautifulsoup4==4.12.2"],
   "dependencies": [],
   "codeowners": ["@skarox89"],
   "config_flow": true,
   "iot_class": "cloud_polling",
-  "platforms": ["sensor"]
+  "platforms": ["sensor"],
+  "icon": "logo.png"
 }

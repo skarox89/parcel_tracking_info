@@ -10,8 +10,12 @@ from homeassistant.components.persistent_notification import create as persisten
 from .const import DOMAIN
 from .carriers import CARRIER_TEMPLATES, add_custom_carrier
 from .parcel_tracking import extract_tracking_number, extract_eta_from_email, extract_status_from_email
+from .carrier_apis import CARRIER_API_CLASSES
+from .options_flow import OptionsFlowHandler  # Import the OptionsFlowHandler
+from .helpers import test_email_connection, process_status_strings
 
 _LOGGER = logging.getLogger(__name__)
+
 
 
 class ParcelTrackingInfoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -57,33 +61,6 @@ class ParcelTrackingInfoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=selection_schema,
-            errors=errors,
-        )
-
-    async def async_step_import_config(self, user_input=None):
-        """Step to import configuration."""
-        errors = {}
-        if user_input is not None:
-            try:
-                # Attempt to parse the imported configuration
-                imported_config = json.loads(user_input.get('imported_config', '{}'))
-                self.user_input.update(imported_config)
-                self.carrier = self.user_input.get('carrier', 'custom')
-                self.api_required = bool(self.user_input.get('api_url'))
-                return await self.async_step_email_config()
-            except json.JSONDecodeError:
-                errors['base'] = 'invalid_import'
-            except Exception as e:
-                _LOGGER.error(f"Unexpected error during import_config: {e}")
-                errors['base'] = 'unknown_error'
-
-        import_schema = vol.Schema({
-            vol.Required('imported_config'): cv.string,
-        })
-
-        return self.async_show_form(
-            step_id="import_config",
-            data_schema=import_schema,
             errors=errors,
         )
 
@@ -146,7 +123,7 @@ class ParcelTrackingInfoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self.api_required = bool(user_input.get('api_url'))
 
                 # Proceed to test parsing step
-                return await self.async_step_test_parsing()
+                return await self.async_step_api_template()
             except Exception as e:
                 _LOGGER.error(f"Error in async_step_carrier_config: {e}")
                 errors['base'] = 'unknown_error'
@@ -226,8 +203,33 @@ class ParcelTrackingInfoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_api_template(self, user_input=None):
+        """Step 4: Select API template or skip if not required."""
+        errors = {}
+        if user_input is not None:
+            self.user_input['api_template'] = user_input.get('api_template')
+            self.api_required = self.user_input['api_template'] != 'no_api'
+            if self.api_required:
+                return await self.async_step_api_config()
+            else:
+                return self.async_create_entry(title="Parcel Tracking Info", data=self.user_input)
+
+        existing_api_template = self.user_input.get('api_template', 'no_api')
+
+        api_templates = list(CARRIER_API_CLASSES.keys()) + ['no_api']
+
+        api_template_schema = vol.Schema({
+            vol.Required('api_template', default=existing_api_template): vol.In(api_templates),
+        })
+
+        return self.async_show_form(
+            step_id="api_template",
+            data_schema=api_template_schema,
+            errors=errors,
+        )
+
     async def async_step_test_parsing(self, user_input=None):
-        """Step 4: Test parsing rules with sample email content."""
+        """Step 5: Test parsing rules with sample email content."""
         errors = {}
         if user_input is not None:
             try:
@@ -292,11 +294,11 @@ class ParcelTrackingInfoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_api_config(self, user_input=None):
-        """Step 5: API configuration."""
+        """Step 6: API configuration."""
         # Skip this step if API info is already collected
         if 'api_key' in self.user_input and 'api_url' in self.user_input:
             return await self._create_entry()
-    
+
         errors = {}
         if user_input is not None:
             try:
@@ -305,11 +307,11 @@ class ParcelTrackingInfoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except Exception as e:
                 _LOGGER.error(f"Error in async_step_api_config: {e}")
                 errors['base'] = 'unknown_error'
-    
+
         # Define API configuration schema based on selected carrier
         carrier = self.user_input.get('carrier')
         api_schema = vol.Schema({})
-    
+
         if carrier == 'dhl':
             api_schema = vol.Schema({
                 vol.Required('api_key'): cv.string,
@@ -321,7 +323,7 @@ class ParcelTrackingInfoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required('api_url', default='https://api.gls.com/track/shipments'): cv.url,
             })
         # Add other carriers as needed
-    
+
         return self.async_show_form(
             step_id="api_config",
             data_schema=api_schema,
@@ -393,259 +395,3 @@ class ParcelTrackingInfoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry):
         """Get the options flow handler."""
         return OptionsFlowHandler(config_entry)
-
-
-class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options flow for the integration."""
-
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
-        """Step 1: Decide which options to configure."""
-        return await self.async_step_choose_options()
-
-    async def async_step_choose_options(self, user_input=None):
-        """Step to choose which options to configure."""
-        if user_input is not None:
-            option = user_input.get('option')
-            if option == 'email_config':
-                return await self.async_step_email_config()
-            elif option == 'carrier_config':
-                return await self.async_step_carrier_config()
-            elif option == 'api_config':
-                return await self.async_step_api_config()
-            elif option == 'export_config':
-                return await self.async_step_export_config()
-            elif option == 'edit_carrier_info':
-                return await self.async_step_edit_carrier_info()
-            else:
-                return self.async_abort(reason='invalid_option')
-
-        options_schema = vol.Schema({
-            vol.Required('option'): vol.In({
-                'email_config': "Email Configuration",
-                'carrier_config': "Carrier Configuration",
-                'edit_carrier_info': "Edit Carrier Info",
-                'api_config': "API Configuration",
-                'export_config': "Export Configuration",
-            })
-        })
-
-        return self.async_show_form(
-            step_id='choose_options',
-            data_schema=options_schema
-        )
-
-    async def async_step_edit_carrier_info(self, user_input=None):
-        """Step to edit the carrier and display name."""
-        errors = {}
-        if user_input is not None:
-            new_carrier = user_input.get('carrier', '').strip()
-            new_display_name = user_input.get('display_name', '').strip()
-            if not new_carrier:
-                errors['carrier'] = 'invalid_carrier'
-            elif not new_display_name:
-                errors['display_name'] = 'invalid_display_name'
-            else:
-                try:
-                    # Update the config entry's data with new carrier and display_name
-                    updated_data = {**self.config_entry.data}
-                    updated_data['carrier'] = new_carrier
-                    updated_data['display_name'] = new_display_name
-
-                    # Update the config entry
-                    self.hass.config_entries.async_update_entry(
-                        self.config_entry,
-                        title=new_display_name,
-                        data=updated_data
-                    )
-                    return self.async_create_entry(title="", data=None)
-                except Exception as e:
-                    _LOGGER.error(f"Error in async_step_edit_carrier_info: {e}")
-                    errors['base'] = 'unknown_error'
-
-        # Pre-fill the form with the current carrier and display_name
-        existing_carrier = self.config_entry.data.get('carrier', '')
-        existing_display_name = self.config_entry.data.get('display_name', self.config_entry.title)
-
-        carrier_info_schema = vol.Schema({
-            vol.Required('carrier', default=existing_carrier): cv.string,
-            vol.Required('display_name', default=existing_display_name): cv.string,
-        })
-
-        return self.async_show_form(
-            step_id="edit_carrier_info",
-            data_schema=carrier_info_schema,
-            errors=errors,
-            description_placeholders={
-                'info': 'You can edit the carrier and display name for your integration.'
-            },
-        )
-
-    async def async_step_email_config(self, user_input=None):
-        """Email configuration in options flow."""
-        errors = {}
-        if user_input is not None:
-            try:
-                # Test email connection
-                imap_server = user_input.get(CONF_HOST)
-                imap_port = user_input.get(CONF_PORT)
-                email_account = user_input.get(CONF_EMAIL)
-                email_password = user_input.get(CONF_PASSWORD)
-
-                connected, error_code = await self.hass.async_add_executor_job(
-                    test_email_connection, imap_server, imap_port, email_account, email_password
-                )
-
-                if not connected:
-                    errors['base'] = error_code or 'cannot_connect'
-                else:
-                    # Update the config entry options with the new email config
-                    updated_options = {**self.config_entry.options, **user_input}
-                    self.hass.config_entries.async_update_entry(
-                        self.config_entry, options=updated_options
-                    )
-                    return self.async_create_entry(title="", data=None)
-            except Exception as e:
-                _LOGGER.error(f"Error in OptionsFlowHandler.async_step_email_config: {e}")
-                errors['base'] = 'unknown_error'
-
-        # Use the existing config entry options to pre-fill the form
-        existing_options = self.config_entry.options
-        existing_data = self.config_entry.data
-
-        email_schema = vol.Schema({
-            vol.Required(CONF_HOST, default=existing_options.get(CONF_HOST, existing_data.get(CONF_HOST, "imap.gmail.com"))): cv.string,
-            vol.Required(CONF_PORT, default=existing_options.get(CONF_PORT, existing_data.get(CONF_PORT, 993))): cv.port,
-            vol.Required(CONF_EMAIL, default=existing_options.get(CONF_EMAIL, existing_data.get(CONF_EMAIL, ""))): cv.string,
-            vol.Required(CONF_PASSWORD): cv.string,
-            vol.Required('email_folder', default=existing_options.get('email_folder', existing_data.get('email_folder', "inbox"))): cv.string,
-            vol.Optional('update_interval', default=existing_options.get('update_interval', existing_data.get('update_interval', 60))): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            vol.Optional('email_age', default=existing_options.get('email_age', existing_data.get('email_age', 10))): vol.All(vol.Coerce(int), vol.Range(min=1)),
-        })
-
-        return self.async_show_form(
-            step_id="email_config",
-            data_schema=email_schema,
-            errors=errors,
-        )
-
-    async def async_step_carrier_config(self, user_input=None):
-        """Carrier configuration in options flow."""
-        errors = {}
-        if user_input is not None:
-            try:
-                # Process status_strings into a list
-                status_strings = user_input.get('status_strings', '')
-                if isinstance(status_strings, str):
-                    status_strings = [s.strip() for s in status_strings.split(',') if s.strip()]
-                elif isinstance(status_strings, list):
-                    status_strings = [s.strip() for s in status_strings if s.strip()]
-                else:
-                    status_strings = []
-                user_input['status_strings'] = status_strings
-
-                # Update the config entry options with the new carrier config
-                updated_options = {**self.config_entry.options, **user_input}
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, options=updated_options
-                )
-                return self.async_create_entry(title="", data=None)
-            except Exception as e:
-                _LOGGER.error(f"Error in OptionsFlowHandler.async_step_carrier_config: {e}")
-                errors['base'] = 'unknown_error'
-
-        existing_options = self.config_entry.options
-        existing_data = self.config_entry.data
-
-        carrier_schema = vol.Schema({
-            vol.Required('search_criteria', default=existing_options.get('search_criteria', existing_data.get('search_criteria', ''))): cv.string,
-            vol.Required('tracking_pattern', default=existing_options.get('tracking_pattern', existing_data.get('tracking_pattern', ''))): cv.string,
-            vol.Optional('eta_string', default=existing_options.get('eta_string', existing_data.get('eta_string', ''))): cv.string,
-            vol.Optional('eta_date_pattern', default=existing_options.get('eta_date_pattern', existing_data.get('eta_date_pattern', ''))): cv.string,
-            vol.Optional('status_strings', default=','.join(existing_options.get('status_strings', existing_data.get('status_strings', [])))): cv.string,
-            vol.Optional('tracking_link_url', default=existing_options.get('tracking_link_url', existing_data.get('tracking_link_url', ''))): cv.string,
-        })
-
-        return self.async_show_form(
-            step_id="carrier_config",
-            data_schema=carrier_schema,
-            errors=errors,
-        )
-
-    async def async_step_api_config(self, user_input=None):
-        """API configuration in options flow."""
-        errors = {}
-        if user_input is not None:
-            try:
-                # Update the config entry options with the new API config
-                updated_options = {**self.config_entry.options, **user_input}
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, options=updated_options
-                )
-                return self.async_create_entry(title="", data=None)
-            except Exception as e:
-                _LOGGER.error(f"Error in OptionsFlowHandler.async_step_api_config: {e}")
-                errors['base'] = 'unknown_error'
-
-        existing_options = self.config_entry.options
-        existing_data = self.config_entry.data
-
-        api_schema = vol.Schema({
-            vol.Required('api_key', default=existing_options.get('api_key', existing_data.get('api_key', ''))): cv.string,
-            vol.Required('api_url', default=existing_options.get('api_url', existing_data.get('api_url', ''))): cv.string,
-        })
-
-        return self.async_show_form(
-            step_id="api_config",
-            data_schema=api_schema,
-            errors=errors,
-        )
-
-    async def async_step_export_config(self, user_input=None):
-        """Step to export existing configuration."""
-        errors = {}
-        if user_input is not None:
-            return self.async_create_entry(title="", data=None)
-        try:
-            current_options = {**self.config_entry.data, **self.config_entry.options}
-            exported_config = json.dumps(current_options, indent=2)
-
-            # Inform the user that the configuration has been exported
-            persistent_notification_create(
-                hass=self.hass,
-                message=f"**Exported Configuration:**\n\n```json\n{exported_config}\n```",
-                title="Parcel Tracking Info - Export Configuration"
-            )
-
-            return self.async_show_form(
-                step_id="export_config",
-                data_schema=vol.Schema({}),
-                description_placeholders={
-                    'message': "Your configuration has been exported and can be found in the Home Assistant notifications."
-                },
-            )
-        except Exception as e:
-            _LOGGER.error(f"Error exporting configuration: {e}")
-            errors['base'] = 'export_failed'
-            return self.async_show_form(
-                step_id="export_config",
-                data_schema=vol.Schema({}),
-                errors=errors,
-            )
-
-
-def test_email_connection(imap_server, imap_port, email_account, email_password):
-    """Test email connection."""
-    import imaplib
-    try:
-        with imaplib.IMAP4_SSL(imap_server, imap_port) as mail:
-            mail.login(email_account, email_password)
-        return True, ""
-    except imaplib.IMAP4.error as e:
-        return False, str(e)
-    except Exception as e:
-        _LOGGER.error(f"Unexpected error in test_email_connection: {e}")
-        return False, "unknown_error"

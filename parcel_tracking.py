@@ -161,7 +161,12 @@ async def fetch_emails(
     processed_tracking_numbers,
     lock,
     email_parsing=None,
-    email_age=10  # Default to 10 days
+    email_age=10,  # Default to 10 days
+    api_required=False,
+    api_template=None,
+    api_key=None,
+    api_url=None,
+    carrier=None,
 ):
     """Fetch emails from the IMAP server and look for tracking numbers and additional info."""
     tracking_numbers = []
@@ -222,7 +227,7 @@ async def fetch_emails(
                         "tracking_number": tracking_number,
                         "status_code": "unknown",
                         "eta": "N/A",
-                        "service_url": "N/A"
+                        "service_url": "N/A",
                     }
 
                     # Use email parsing rules if provided
@@ -246,6 +251,17 @@ async def fetch_emails(
                             else:
                                 _LOGGER.warning(f"Status not found using strings for tracking number {tracking_number}.")
 
+                    # Fetch additional tracking info via API if required
+                    if api_required:
+                        api_tracking_info = await fetch_tracking_info(
+                            tracking_number,
+                            api_key,
+                            api_url,
+                            api_template,
+                            carrier,
+                        )
+                        tracking_info.update(api_tracking_info)
+
                     tracking_numbers.append(tracking_info)
                     _LOGGER.debug(f"Added tracking info: {tracking_info}")
 
@@ -260,16 +276,20 @@ async def fetch_emails(
 
     return tracking_numbers
 
-async def fetch_tracking_info(tracking_number, api_key, api_url, carrier):
-    """Fetch tracking information from the carrier's API asynchronously."""
-    # Get the appropriate API class based on the carrier
-    _LOGGER.debug(f"Carrier before normalization: '{carrier}'")
-    carrier_normalized = carrier.lower().strip()
-    _LOGGER.debug(f"Carrier after normalization: '{carrier_normalized}'")
-    api_class = CARRIER_API_CLASSES.get(carrier_normalized)
+async def fetch_tracking_info(tracking_number, api_key, api_url, api_template, carrier):
+    """Fetch tracking information using the selected API template."""
+    if not api_template:
+        # For backward compatibility, use the carrier name as the API template
+        api_template = carrier.lower()
 
+    if api_template == 'no_api':
+        _LOGGER.debug("No API template selected. Skipping API call.")
+        return {"status_code": "unknown", "service_url": "unknown", "eta": "N/A"}
+
+    # Get the appropriate API class based on the api_template
+    api_class = CARRIER_API_CLASSES.get(api_template.lower())
     if not api_class:
-        _LOGGER.error(f"No API implementation found for carrier '{carrier}'.")
+        _LOGGER.error(f"No API implementation found for template '{api_template}'.")
         return {"status_code": "unknown", "service_url": "unknown", "eta": "N/A"}
 
     # Instantiate the API class

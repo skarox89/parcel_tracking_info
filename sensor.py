@@ -54,6 +54,9 @@ class ParcelTrackingCoordinator(DataUpdateCoordinator):
         carrier = self.entry.options.get(
             "carrier", self.entry.data.get("carrier", "dhl")
         )
+        api_template = self.entry.options.get(
+            "api_template", self.entry.data.get("api_template", "")
+        )
         imap_server = self.entry.options.get(
             CONF_HOST, self.entry.data.get(CONF_HOST, "")
         )
@@ -111,7 +114,7 @@ class ParcelTrackingCoordinator(DataUpdateCoordinator):
         self.tracking_data = new_tracking_data
 
         # Fetch tracking info for each tracking number
-        await self.fetch_tracking_info(api_key, api_url, carrier)
+        await self.fetch_tracking_info(api_key, api_url, api_template, carrier)
 
         # Handle tracking_link_url to set service_url
         if tracking_link_url:
@@ -210,14 +213,14 @@ class ParcelTrackingCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(f"New tracking numbers fetched: {new_tracking_data}")
         return new_tracking_data
 
-    async def fetch_tracking_info(self, api_key, api_url, carrier):
+    async def fetch_tracking_info(self, api_key, api_url, api_template, carrier):
         """Fetch tracking info via the API for all tracking numbers."""
         _LOGGER.debug("Fetching tracking information via API.")
 
         for tracking in self.tracking_data:
             tracking_number = tracking.get("tracking_number", None)
             if tracking_number and api_key and api_url:
-                api_data = await fetch_tracking_info(tracking_number, api_key, api_url, carrier)
+                api_data = await fetch_tracking_info(tracking_number, api_key, api_url, api_template, carrier)
                 tracking.update(api_data)
                 _LOGGER.debug(f"Updated tracking data with API info: {tracking}")
             else:
@@ -283,7 +286,7 @@ class BaseTrackingSensor(CoordinatorEntity):
         self.display_name = display_name
         self.tracking_link_url = tracking_link_url
 
-        self._attr_name = f"{self.display_name} {sensor_type.replace('_', ' ').capitalize()} {index}"
+        self._attr_name = f"{self.display_name} {sensor_type.replace('_', ' ').capitalize()} {index + 1}"
         self._attr_unique_id = f"{coordinator.unique_id}_{carrier}_{sensor_type}_{index}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.unique_id)},
@@ -295,57 +298,70 @@ class BaseTrackingSensor(CoordinatorEntity):
     @property
     def tracking_url(self):
         """Construct and return the tracking URL with tracking number appended appropriately."""
-        tracking_number = self.coordinator.data[self.index].get('tracking_number', 'Unknown')
-        if not self.tracking_link_url or tracking_number == "Unknown":
+        if self.index < len(self.coordinator.data):
+            tracking = self.coordinator.data[self.index]
+            tracking_number = tracking.get('tracking_number', 'Unknown')
+            if not self.tracking_link_url or tracking_number == "Unknown":
+                return 'Unknown'
+
+            parsed_url = urlparse(self.tracking_link_url)
+            query = parsed_url.query
+            fragment = parsed_url.fragment
+            path = parsed_url.path
+
+            # Handle fragments
+            if self.tracking_link_url.endswith('#') or fragment:
+                # Append tracking number to fragment
+                new_fragment = f"{fragment}{tracking_number}"
+                new_parsed_url = parsed_url._replace(fragment=new_fragment)
+                return urlunparse(new_parsed_url)
+            
+            # Handle query parameters
+            query_params = parse_qs(query, keep_blank_values=True)
+            empty_param_found = False
+            for key in query_params:
+                if query_params[key] == ['']:
+                    query_params[key] = [tracking_number]
+                    empty_param_found = True
+            if empty_param_found:
+                new_query = urlencode(query_params, doseq=True)
+                new_parsed_url = parsed_url._replace(query=new_query)
+                return urlunparse(new_parsed_url)
+            elif self.tracking_link_url.endswith('?'):
+                # URL ends with '?', but no query parameters
+                new_query = urlencode({tracking_number: ''})
+                new_parsed_url = parsed_url._replace(query=new_query)
+                return urlunparse(new_parsed_url)
+            elif query_params:
+                # Append tracking number as a new query parameter
+                query_params['tracking_number'] = [tracking_number]
+                new_query = urlencode(query_params, doseq=True)
+                new_parsed_url = parsed_url._replace(query=new_query)
+                return urlunparse(new_parsed_url)
+            else:
+                # Append tracking number to path
+                if not path.endswith('/'):
+                    new_path = f"{path}/{tracking_number}"
+                else:
+                    new_path = f"{path}{tracking_number}"
+                new_parsed_url = parsed_url._replace(path=new_path)
+                return urlunparse(new_parsed_url)
+        else:
+            _LOGGER.error(f"Index {self.index} out of range for coordinator data with length {len(self.coordinator.data)}")
             return 'Unknown'
 
-        parsed_url = urlparse(self.tracking_link_url)
-        query = parsed_url.query
-        fragment = parsed_url.fragment
-        path = parsed_url.path
-
-        # Handle fragments
-        if self.tracking_link_url.endswith('#') or fragment:
-            # Append tracking number to fragment
-            new_fragment = f"{fragment}{tracking_number}"
-            new_parsed_url = parsed_url._replace(fragment=new_fragment)
-            return urlunparse(new_parsed_url)
-        
-        # Handle query parameters
-        query_params = parse_qs(query, keep_blank_values=True)
-        empty_param_found = False
-        for key in query_params:
-            if query_params[key] == ['']:
-                query_params[key] = [tracking_number]
-                empty_param_found = True
-        if empty_param_found:
-            new_query = urlencode(query_params, doseq=True)
-            new_parsed_url = parsed_url._replace(query=new_query)
-            return urlunparse(new_parsed_url)
-        elif self.tracking_link_url.endswith('?'):
-            # URL ends with '?', but no query parameters
-            new_query = urlencode({tracking_number: ''})
-            new_parsed_url = parsed_url._replace(query=new_query)
-            return urlunparse(new_parsed_url)
-        elif query_params:
-            # Append tracking number as a new query parameter
-            query_params['tracking_number'] = [tracking_number]
-            new_query = urlencode(query_params, doseq=True)
-            new_parsed_url = parsed_url._replace(query=new_query)
-            return urlunparse(new_parsed_url)
-        else:
-            # Append tracking number to path
-            if not path.endswith('/'):
-                new_path = f"{path}/{tracking_number}"
-            else:
-                new_path = f"{path}{tracking_number}"
-            new_parsed_url = parsed_url._replace(path=new_path)
-            return urlunparse(new_parsed_url)
+    @property
+    def available(self):
+        """Return True if the sensor is available (i.e., index is within data range)."""
+        is_available = self.index < len(self.coordinator.data)
+        if not is_available:
+            _LOGGER.warning(f"Sensor '{self.name}' index {self.index} is out of range. Data length: {len(self.coordinator.data)}")
+        return is_available
 
     @property
     def state(self):
-        """Return the tracking URL as the state."""
-        return self.tracking_url
+        """Return the state of the sensor."""
+        raise NotImplementedError("Must be implemented by subclasses.")
 
 
 class TrackingNumberSensor(BaseTrackingSensor):

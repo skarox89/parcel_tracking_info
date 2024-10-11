@@ -6,6 +6,7 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, CONF_HOST, CONF_PORT
 from homeassistant.exceptions import ConfigEntryNotReady
 from .const import DOMAIN
 import imaplib
+from . import config_flow  # Ensure config_flow is imported to register the flow
 
 _LOGGER = logging.getLogger(__name__)
 
