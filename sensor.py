@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity_registry import async_get
 from .parcel_tracking import fetch_tracking_info, fetch_emails
 from .const import DOMAIN
 from .carriers import CARRIER_TEMPLATES  # Import carrier templates
@@ -44,6 +45,7 @@ class ParcelTrackingCoordinator(DataUpdateCoordinator):
         self.tracking_data = []
         self.lock = asyncio.Lock()  # Instance-specific lock
         self.processed_tracking_numbers = set()  # Instance-specific set
+        self.active_indices = set()  # Track active sensor indices
 
     async def _async_update_data(self):
         """Fetch data from emails and API."""
@@ -110,15 +112,24 @@ class ParcelTrackingCoordinator(DataUpdateCoordinator):
             email_age,  # Pass email_age
         )
 
-        # Update self.tracking_data with new_tracking_data
-        self.tracking_data = new_tracking_data
+        # Sort tracking_data to maintain consistent ordering
+        new_tracking_data_sorted = sorted(new_tracking_data, key=lambda x: x["tracking_number"])
+
+        # Update self.tracking_data with sorted data
+        self.tracking_data = new_tracking_data_sorted
+
+        # Determine new and removed indices
+        new_indices = set(range(len(self.tracking_data)))
+        removed_indices = self.active_indices - new_indices
+        added_indices = new_indices - self.active_indices
+        self.active_indices = new_indices
 
         # Fetch tracking info for each tracking number
         await self.fetch_tracking_info(api_key, api_url, api_template, carrier)
 
         # Handle tracking_link_url to set service_url
         if tracking_link_url:
-            for index, tracking in enumerate(self.tracking_data):
+            for tracking in self.tracking_data:
                 service_url = tracking.get("service_url", "N/A")
                 if service_url in ["unknown", "N/A"] and tracking.get("tracking_number"):
                     tracking_number = tracking["tracking_number"]
@@ -129,6 +140,7 @@ class ParcelTrackingCoordinator(DataUpdateCoordinator):
 
         _LOGGER.debug(f"Coordinator tracking data after update: {self.tracking_data}")
         return self.tracking_data
+
 
     def construct_tracking_url(self, base_url, tracking_number):
         """Construct the tracking URL with tracking number appended appropriately."""
@@ -213,6 +225,7 @@ class ParcelTrackingCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(f"New tracking numbers fetched: {new_tracking_data}")
         return new_tracking_data
 
+
     async def fetch_tracking_info(self, api_key, api_url, api_template, carrier):
         """Fetch tracking info via the API for all tracking numbers."""
         _LOGGER.debug("Fetching tracking information via API.")
@@ -258,11 +271,36 @@ async def async_setup_entry(hass, entry, async_add_entities: AddEntitiesCallback
     display_names = hass.data.get(DOMAIN, {}).get('display_name', {})
     tracking_link_urls = hass.data.get(DOMAIN, {}).get('tracking_link_url', {})
 
-    # Create sensors
+    # Get the Entity Registry for cleanup
+    entity_registry = async_get(hass)
+
+    # Identify existing sensor indices to manage cleanup
+    existing_indices = coordinator.active_indices.copy()
+    new_indices = set(range(len(coordinator.tracking_data)))
+
+    # Determine which indices have been removed
+    removed_indices = existing_indices - new_indices
+
+    # Remove sensors associated with removed indices
+    for index in removed_indices:
+        # Remove all sensor types associated with the index
+        for sensor_type in ["tracking_number", "status", "tracking_link", "eta"]:
+            entity_id = f"sensor.{DOMAIN}_{carrier}_{sensor_type}_{index}"
+            entry = entity_registry.async_get(entity_id)
+            if entry:
+                _LOGGER.info(f"Removing obsolete sensor: {entity_id}")
+                entity_registry.async_remove(entity_id)
+
+    # Update the coordinator's active_indices
+    coordinator.active_indices = new_indices
+
+    # Create new sensors
     sensors = []
     for index, tracking in enumerate(coordinator.tracking_data):
         display_name = display_names.get(carrier, carrier.capitalize())
         tracking_link_url = tracking_link_urls.get(carrier, '')
+
+        # Create sensors using index instead of tracking_number
         sensors.append(TrackingNumberSensor(coordinator, index, carrier, display_name, tracking_link_url))
         sensors.append(TrackingStatusSensor(coordinator, index, carrier, display_name, tracking_link_url))
         sensors.append(TrackingLinkSensor(coordinator, index, carrier, display_name, tracking_link_url))
@@ -286,8 +324,9 @@ class BaseTrackingSensor(CoordinatorEntity):
         self.display_name = display_name
         self.tracking_link_url = tracking_link_url
 
-        self._attr_name = f"{self.display_name} {sensor_type.replace('_', ' ').capitalize()} {index + 1}"
-        self._attr_unique_id = f"{coordinator.unique_id}_{carrier}_{sensor_type}_{index}"
+        self._attr_name = f"{self.display_name} {sensor_type.replace('_', ' ').capitalize()} {self.index}"
+        self._attr_unique_id = f"{coordinator.unique_id}_{carrier}_{sensor_type}_{self.index}"
+        self._attr_entity_id = f"sensor.{DOMAIN}_{carrier}_{sensor_type}_{self.index}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.unique_id)},
             name=f"{self.display_name} Tracking Info",
@@ -380,6 +419,11 @@ class TrackingNumberSensor(BaseTrackingSensor):
             return tracking.get("tracking_number", "unknown")
         return "unknown"
 
+    @property
+    def icon(self):
+        """Return the icon of the sensor."""
+        return "mdi:package-variant-closed"
+
 
 class TrackingStatusSensor(BaseTrackingSensor):
     """Sensor for tracking status."""
@@ -396,6 +440,11 @@ class TrackingStatusSensor(BaseTrackingSensor):
             tracking = self.coordinator.data[self.index]
             return tracking.get("status_code", "unknown")
         return "unknown"
+        
+    @property
+    def icon(self):
+        """Return the icon of the sensor."""
+        return "mdi:magnify-expand"
 
 
 class TrackingETASensor(BaseTrackingSensor):
@@ -413,6 +462,11 @@ class TrackingETASensor(BaseTrackingSensor):
             tracking = self.coordinator.data[self.index]
             return tracking.get("eta", "N/A")
         return "N/A"
+
+    @property
+    def icon(self):
+        """Return the icon of the sensor."""
+        return "mdi:update"
 
 
 class TrackingLinkSensor(BaseTrackingSensor):
