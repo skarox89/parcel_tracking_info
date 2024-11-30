@@ -207,7 +207,7 @@ async def fetch_emails(
             email_numbers = email_numbers[::-1]
 
             for num in email_numbers:
-                fetch_email = functools.partial(mail.fetch, num, "(RFC822)")
+                fetch_email = functools.partial(mail.fetch, num, "(BODY.PEEK[])")
                 status, data = await hass.async_add_executor_job(fetch_email)
                 if status != "OK":
                     _LOGGER.warning(f"Failed to fetch email number {num.decode()}. Skipping.")

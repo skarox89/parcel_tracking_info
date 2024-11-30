@@ -7,6 +7,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from .const import DOMAIN
 import imaplib
 from . import config_flow  # Ensure config_flow is imported to register the flow
+from .coordinator import ParcelTrackingCoordinator  # Import the coordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +44,13 @@ async def async_setup_entry(hass, entry):
             _LOGGER.error(f"Email connection failed: {error_message}")
             raise ConfigEntryNotReady(error_message)
 
+        # Initialize the coordinator
+        coordinator = ParcelTrackingCoordinator(hass, entry)
+        await coordinator.async_config_entry_first_refresh()
+
+        # Store the coordinator
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
         # Forward the config entry setup to the sensor platform
         await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
 
@@ -58,7 +66,7 @@ async def async_unload_entry(hass, entry):
     _LOGGER.info(f"Unloading Parcel Tracking Info config entry: {entry.title}")
 
     # Remove the coordinator from hass.data
-    hass.data.get(DOMAIN, {}).pop(entry.unique_id, None)
+    hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
 
     # Unload the sensor platform
     unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor"])
