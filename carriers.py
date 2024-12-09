@@ -43,13 +43,14 @@ CARRIER_TEMPLATES = {
         'name': 'DPD',
         'api_url': 'none',
         'search_criteria': '(FROM "dpd")',
-        'tracking_pattern': r'\b\d{15}\b',
+        'tracking_pattern': r'\b\d{14}\b',
         'carrier': 'DPD',
         'email_parsing': {  # Added empty email_parsing
-            'eta_string': '',
-            'eta_date_pattern': '',
-            'status_strings': ['in transit', 'in delivery', 'out for delivery', 'in zustellung', 'wird zugestellt', 'unterwegs', 'in Kürze zugestellt', 'sendung unterwegs', 'in zustellung', 'wird zugestellt', 'abholbereit']
+            'eta_string': 'Ihre Sendung stellen wir in',
+            'eta_date_pattern': '(\d+)-(\d+)\s+Werktagen',
+            'status_strings': ['stellen wir', 'in transit', 'in delivery', 'out for delivery', 'in zustellung', 'wird zugestellt', 'unterwegs', 'in Kürze zugestellt', 'sendung unterwegs', 'in zustellung', 'wird zugestellt', 'abholbereit']
         },
+        'tracking_link_url': 'https://my.dpd.de/myparcels/dataprotection.aspx?action=2&parcelno=B2C0'
     },
     'GLS': {
         'name': 'GLS',

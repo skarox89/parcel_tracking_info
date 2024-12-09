@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import dateparser
@@ -32,6 +32,7 @@ DATE_PATTERNS = [
     r'Zustellung:\s+(?:Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag),\s+(\d{1,2})\s+(\w+)',  # Freitag, 4 Oktober
     r'am\s+(?:Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag),\s+den\s+(\d{1,2})\.(\d{1,2})\.',  # am Montag, den 16.09.
     r'(?:Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag),\s+(\d{1,2})\s+(\w+)',  # Freitag, 17. Mai
+    r'in\s+(\d+)-(\d+)\s+Werktagen',  # Relative date: in 1-2 Werktagen
     # Add more patterns if needed
 ]
 
@@ -69,6 +70,13 @@ def normalize_date(date_string: str) -> Optional[str]:
                     day, month_str = match.groups()
                     month = GERMAN_MONTHS.get(month_str.lower())
                     year = current_year
+                elif pattern == DATE_PATTERNS[4]:
+                    # in 1-2 Werktagen
+                    min_days, max_days = map(int, match.groups())
+                    eta_date = datetime.now() + timedelta(days=max_days)  # Choose max days for ETA
+                    normalized_date = eta_date.strftime("%d.%m.%Y")
+                    _LOGGER.debug(f"Normalized relative ETA date: {normalized_date} from '{date_string}'")
+                    return normalized_date
                 else:
                     continue  # Unknown pattern
 

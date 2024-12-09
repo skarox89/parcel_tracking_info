@@ -29,7 +29,8 @@ STATUS_MAPPING = {
         r"bestellung versandt",
         r"transit",
         r"zustellung",
-        r"wird in kürze zugestellt"
+        r"wird in kürze zugestellt",
+        r"stellen wir"
     ],
     "Zugestellt": [
         r"delivered",
